@@ -1,0 +1,124 @@
+import http.server
+import socketserver
+import json 
+import requests
+import pandas as pd 
+import sqlite3
+import time
+import random
+import os
+import hashlib
+import os
+
+
+# Defining a HTTP request Handler class
+class ServiceHandler(http.server.SimpleHTTPRequestHandler):
+
+	def __init__(self):
+		self.headers = {
+				'x-rapidapi-key': "921cfc17abmsh42834139575656fp12725cjsn8ce3ad10333d",
+				'x-rapidapi-host': "restcountries-v1.p.rapidapi.com"
+		}
+		self.url_countries_by_region = "https://restcountries.com/v3.1/region/{region}"
+		self.url = "https://restcountries.com/v3.1/all" 
+		self.rel_path_db = "db/tangelo.sqlite"
+		self.script_dir_db = os.path.dirname(__file__)
+		self.abs_file_path_db = os.path.join(self.script_dir_db, self.rel_path_db)
+		self.create_directory()
+	
+	# GET Method Defination
+	def do_GET(self):
+		if self.path == "/":
+			# defining all the headers
+			self.send_response(200)
+			self.send_header('Content-type','application/json')
+			self.end_headers()
+
+			reg_data = []
+			hash_languages =[]
+			countries = []
+			times=[]
+			count_errors = 0
+			
+			data  = self.get_regions()
+
+			try: 
+				for info in data:
+					if info["region"]  and not info["region"]  in reg_data:
+						# Only the different existing regions
+						reg_data.append(info["region"])
+				for region in reg_data:
+					start_time = time.time()
+					# We wait 2 seconds before making the next request to avoid ip blocks in the API
+					response_by_region = requests.get( 
+						self.url_countries_by_region.format(region=region), headers=self.headers).json()
+					# We consult the data requested by region
+					valid = False
+					while valid is False:
+						country_option = random.randint(0,len(response_by_region)-1)
+						if "languages" in list( response_by_region[country_option].keys()):
+							valid = True
+						else:
+							response_by_region.pop(country_option)
+
+					countries.append(response_by_region[country_option]['name']['common'])
+					key_language =  list(response_by_region[country_option]['languages'].keys())[0]
+					hash_languages.append(hashlib.sha1(response_by_region[country_option]['languages'][str(key_language)].encode()).hexdigest())
+					end_time = time.time()
+					times.append(round((end_time-start_time)*1000,2))
+			except KeyError as e:
+				count_errors+=1
+				data = {"message":"Error externo en la Api de paises"}
+				with open('data.json', 'w', encoding='utf-8') as f:
+					json.dump(data, f, ensure_ascii=False, indent=4)
+				error_information = self.json_read()
+				self.wfile.write(json.dumps(error_information).encode())
+			if count_errors == 0:
+				df = pd.DataFrame({
+					"Region": reg_data,
+					"Country": countries,
+					"Language SHA1": hash_languages,
+					"Time [ms]": times
+				})
+				statistics = {}
+				statistics['total'] = df['Time [ms]'].sum()
+				statistics['mean'] = df['Time [ms]'].mean()
+				statistics['min'] = df['Time [ms]'].min()
+				statistics['max'] = df['Time [ms]'].max()
+				#  we build a dataframe and a data.json file with the results of the algorithm
+				df.to_json(path_or_buf='data.json')
+				# here we can return the answer in html format but I decided to leave the answer in json format
+				data_information = self.json_read()
+				self.insert_data(statistics)
+				self.wfile.write(json.dumps(data_information).encode())
+
+	def json_read(self):
+		script_dir = os.path.dirname(__file__) # <-- absolute dir the script 
+		rel_path = "data.json"
+		abs_file_path = os.path.join(script_dir, rel_path)
+		# open json file and give it to data variable as a dictionary
+		with open(abs_file_path) as data_file:
+			data_information = json.load(data_file)
+		return data_information
+
+	def get_regions(self):
+		data  = json.loads(requests.request("GET", self.url, headers=self.headers).text)
+		return data
+	
+	def create_directory(self):
+		path = os.path.join(self.script_dir_db, 'db')
+		if not os.path.exists(path):
+			os.mkdir(path)
+
+class ReuseAddrTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+PORT = int(os.environ.get('PORT', 8000))
+myserver = ReuseAddrTCPServer(("",PORT),ServiceHandler)
+myserver.daemon_threads = True
+print(f"Server Started at http://127.0.0.1:{PORT}/" )
+try:
+    myserver.serve_forever()
+except:
+    print ("Closing the server.")
+    myserver.server_close()
