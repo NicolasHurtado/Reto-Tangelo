@@ -24,6 +24,7 @@ class ServiceHandler(http.server.SimpleHTTPRequestHandler):
 		self.rel_path_db = "db/tangelo.sqlite"
 		self.script_dir_db = os.path.dirname(__file__)
 		self.abs_file_path_db = os.path.join(self.script_dir_db, self.rel_path_db)
+		self.create_table()
 		self.create_directory()
 	
 	# GET Method Defination
@@ -109,6 +110,40 @@ class ServiceHandler(http.server.SimpleHTTPRequestHandler):
 		path = os.path.join(self.script_dir_db, 'db')
 		if not os.path.exists(path):
 			os.mkdir(path)
+
+	def create_table(self):
+		query = """
+		CREATE TABLE IF NOT EXISTS prueba_tangelo (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			total_time REAL NOT NULL,
+			mean_time REAL NOT NULL,
+			min_time REAL NOT NULL,
+			max_time REAL NOT NULL
+			);
+		"""
+		self.excute_query(query)
+	
+	def excute_query(self, query):
+		try:
+			connection = sqlite3.connect(self.abs_file_path_db)
+			cursor = connection.cursor()
+			print("Successfully Connected to SQLite")
+			cursor.executescript(query)
+			print("FINISHED")
+			cursor.close()	
+		except sqlite3.Error as error:
+			print("Error while connecting to sqlite", error)
+		finally:
+			if (connection):
+				connection.close()
+				print("The SQLite connection is closed")
+	
+	def insert_data(self,statistics):
+		query_insert = (f"""
+			INSERT INTO prueba_tangelo (total_time, mean_time, min_time, max_time)
+			VALUES ({statistics['total']}, {statistics['mean']}, {statistics['min']}, {statistics['max']});""")
+		self.excute_query(query_insert)
+
 
 class ReuseAddrTCPServer(socketserver.TCPServer):
     allow_reuse_address = True
