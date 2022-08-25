@@ -151,7 +151,7 @@ class ServiceHandler(http.server.SimpleHTTPRequestHandler):
         try:
             print("Successfully Connected to SQLite")
             cursor.executescript(query)
-            print("FINISHED")
+            print("Query done successfully")
             cursor.close()
         except sqlite3.Error as error:
             print("Error connecting to DB", error)
